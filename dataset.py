@@ -9,10 +9,10 @@ from tokenizers import ByteLevelBPETokenizer
 # ===================================================================
 
 SPEC_TOKENS = {
-    "<pad>": 0,
-    "<s>": 1,
-    "</s>": 2,
-    "<unk>": 3,
+    "[PAD]": 0,
+    "[SEP]": 1,
+    "[CLS]": 2,
+    "[UNK]": 3,
 }
 
 def get_datasplits(path:str, batch_size:int=16, train_split:float=0.8) -> (DataLoader, DataLoader):
@@ -43,27 +43,24 @@ def collate_fn(batch:List[object]) -> object:
     sents = [sample['sentence'] for sample in batch]
     corruptions = [sample['corruption'] for sample in batch]
     X = []
+    X_seg = []
     Y = []
     for i in range(len(batch)):
         # <s> sent </s><s> corruption </s>
         # random shuffling to avoid shortcut learning by position
         if random.randint(0, 1):
-            x = torch.LongTensor([SPEC_TOKENS["<s>"]] + sents[i].ids + [SPEC_TOKENS["</s>"]] + 
-                                [SPEC_TOKENS["<s>"]] + corruptions[i].ids + [SPEC_TOKENS["</s>"]])
-            y = torch.LongTensor([1] * (len(sents[i].ids)+2) + [0] * (len(corruptions[i].ids)+2)) # token level labeling
+            X.append(torch.LongTensor([SPEC_TOKENS["[CLS]"]] + sents[i].ids + [SPEC_TOKENS["[SEP]"]] + corruptions[i].ids))
+            X_seg.append(torch.LongTensor([0] + [0] * len(sents[i].ids) + [0] + [1] * len(corruptions[i].ids)))
+            Y.append(0)
         else:
-            x = torch.LongTensor([SPEC_TOKENS["<s>"]] + corruptions[i].ids + [SPEC_TOKENS["</s>"]] + 
-                                [SPEC_TOKENS["<s>"]] + sents[i].ids + [SPEC_TOKENS["</s>"]])
-            y = torch.LongTensor([0] * (len(sents[i].ids)+2) + [1] * (len(corruptions[i].ids)+2)) # token level labeling
-        
-        X.append(x)
-        Y.append(y)
+            X.append(torch.LongTensor([SPEC_TOKENS["[CLS]"]] + corruptions[i].ids + [SPEC_TOKENS["[SEP]"]] + sents[i].ids))
+            X_seg.append(torch.LongTensor([0] + [1] * len(corruptions[i].ids) + [0] + [0] * len(sents[i].ids)))
+            Y.append(1)
 
-    X, X_mask = merge(X, pad_token=SPEC_TOKENS["<pad>"])
-    Y, Y_mask = merge(Y, pad_token=0)
-    #Y = torch.nn.functional.one_hot(Y, num_classes=2)
-
-    return {"X": X, "X_mask": X_mask, "Y": Y, "Y_mask": Y_mask}
+    X, X_mask = merge(X, pad_token=SPEC_TOKENS["[PAD]"])
+    X_seg, _ = merge(X_seg, pad_token=SPEC_TOKENS["[PAD]"])
+    Y = torch.LongTensor(Y)
+    return {"X": X, "X_mask": X_mask, "X_seg": X_seg, "Y": Y}
 
 # ===================================================================
 
@@ -77,10 +74,10 @@ class CorruptionsTokenizer():
             )
         else:
             self.tokenizer.train(files=[path], vocab_size=vocab_size, min_frequency=1, special_tokens=[
-                "<s>",
-                "<pad>",
-                "</s>",
-                "<unk>",
+                "[PAD]",
+                "[SEP]",
+                "[CLS]",
+                "[UNK]",
             ])
             self.tokenizer.save_model(save_path)
         self.tokenizer.enable_truncation(max_length=512)

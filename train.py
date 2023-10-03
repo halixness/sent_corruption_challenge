@@ -16,7 +16,7 @@ config = {
         "lr": 0.0005,
         "device": "cuda",
         "val_interval": 5,
-        "batch_size": 128,
+        "batch_size": 64,
         "train_split": 0.8
     },
     "model": {

@@ -8,7 +8,7 @@ class Trainer:
         self.model = model
         self.config = config
         self.optimizer = optim.AdamW(self.model.parameters(), lr=self.config["lr"])
-        self.criterion = torch.nn.BCEWithLogitsLoss(reduction="none")
+        self.criterion = torch.nn.BCEWithLogitsLoss()
         self.device = self.config["device"]
         self.val_interval = self.config["val_interval"]
 
@@ -25,23 +25,25 @@ class Trainer:
                 self.optimizer.zero_grad()
 
                 data, target = batch["X"].to(self.device), batch["Y"].double().to(self.device)
-                data_mask = batch["X_mask"].to(self.device)
+                attn_mask = batch["X_mask"].to(self.device)
+                seg_mask = batch["X_seg"].to(self.device)
 
-                y_pred = self.model(src=data, src_key_padding_mask=data_mask)
-                loss = self.criterion(y_pred.squeeze(-1).double(), target)
+                y_pred = self.model(src=data, seg_mask=seg_mask, attn_mask=attn_mask)
+                loss = self.criterion(y_pred, target)
 
-                loss[batch["Y_mask"]] = 0
-                loss = loss.mean()
                 loss.backward()
                 self.optimizer.step()
 
                 progress_bar.update(1)
-                losses.append(loss.item())
-                if len(losses) > 100: progress_bar.set_description(f"Moving loss: {torch.tensor(losses)[-100:].mean():.4f}")
+                progress_bar.set_description(f"Loss: {loss.item()}")
+
+                #losses.append(loss.item())
+                #if len(losses) > 100: progress_bar.set_description(f"Moving loss: {torch.tensor(losses)[-100:].mean():.4f}")
 
                 del data
                 del target
-                del data_mask
+                del attn_mask
+                del seg_mask
                 torch.cuda.empty_cache()
 
             if epoch % self.val_interval == 0:
